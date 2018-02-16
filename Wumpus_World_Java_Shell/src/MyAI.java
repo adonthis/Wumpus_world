@@ -185,7 +185,7 @@ public class MyAI extends Agent {
 	public static int agentX;
 	public static int agentY;
 	public static int agentDir;
-	public static boolean wumpusFound, wumpusKilled,  bumped, returnNow, gold_grabbed, startCorner, endCorner, exitCave;
+	public static boolean wumpusFound, wumpusKilled,  bumped, returnNow, gold_grabbed, startCorner, endCorner, exitCave, stageRow, stageCol,turnedRight;
 	public static Cell[][] myWorld;
     public static ArrayList<Action> backTrackSteps;
 	public MyAI() {
@@ -209,6 +209,9 @@ public class MyAI extends Agent {
         endCorner =false;
         bumped = false;
         returnNow =false;
+        stageCol =false;
+        stageRow =false;
+        turnedRight =false;
         backTrackSteps = new ArrayList<Action>();
 		// Create a map of 7x7
 
@@ -268,8 +271,18 @@ public class MyAI extends Agent {
 //		System.out.println("scream is" + scream);
 
         if(exitCave && agentX==0 && agentY ==0){
-            System.out.println("X :" +agentX+" Y :"+agentY+" Action is :" + Action.CLIMB);
-            return Action.CLIMB;
+
+            if(!gold_grabbed && !turnedRight) {
+                exitCave =false;
+                turnedRight=true;
+                System.out.println("Action taken :" +Action.TURN_RIGHT);
+                return Action.TURN_RIGHT;
+//            }else if(turnedRight){
+//                return getNextMove(stench, breeze, glitter, bump, scream); 
+            }else {
+                System.out.println("X :" + agentX + " Y :" + agentY + " Action is :" + Action.CLIMB);
+                return Action.CLIMB;
+            }
             //if at start point and exit true then climb
         }
 
@@ -279,20 +292,18 @@ public class MyAI extends Agent {
             System.out.println("glitter is" + glitter);
             gold_grabbed =true;
             return Action.GRAB;
-
         }
 
 		if (glitter) {
 			// traceback information
 			return Action.GRAB;
-
 		}
 		if (bump) {
 			handleBump();
 		}
 		updateMap(stench, breeze, bump, scream, myWorld, agentX, agentY, agentDir);
 		runIntelligence(myWorld);
-		printBoardInfo();
+//		printBoardInfo();
 		if (usingCustomMap) {
 			Action temp = getNextMove(stench, breeze, glitter, bump, scream);
 			updateLocationInfo(temp);
@@ -309,30 +320,77 @@ public class MyAI extends Agent {
 
     public Action getNextMove(boolean stench, boolean breeze, boolean glitter, boolean bump, boolean scream){
 
+
 	    Action retAction = null;
 
+        if(stageCol){
+            retAction = handleCol(stench, breeze, glitter, bump, scream);
+        }
+
+        retAction = handleRow(stench, breeze, glitter, bump, scream);
+
+
+//
+//        if(exitCave && !gold_grabbed){
+//            retAction = backTrackSteps.remove(backTrackSteps.size()-1);
+//        } else if((agentX<colDimension-1) && !gold_grabbed && getRightNeighbor(agentX,agentY).isSafe()){
+//
+//            backTrackSteps.add(Action.FORWARD);
+//
+//            retAction = Action.FORWARD;
+//        } else{
+//            exitCave=true;
+//            if(gold_grabbed)gold_grabbed=false;
+//
+//            backTrackSteps.add(Action.TURN_RIGHT);
+//
+//            retAction = Action.TURN_RIGHT;
+//        }
+
+        System.out.println("Action taken :" +retAction);
+
+        return retAction;
+
+    }
+
+    public Action handleRow(boolean stench, boolean breeze, boolean glitter, boolean bump, boolean scream){
+
+        Action retAction = null;
 
         if(exitCave && !gold_grabbed){
             retAction = backTrackSteps.remove(backTrackSteps.size()-1);
         } else if((agentX<colDimension-1) && !gold_grabbed && getRightNeighbor(agentX,agentY).isSafe()){
-
             backTrackSteps.add(Action.FORWARD);
-
             retAction = Action.FORWARD;
-        }
-        else{
+        } else{
             exitCave=true;
             if(gold_grabbed)gold_grabbed=false;
-
             backTrackSteps.add(Action.TURN_RIGHT);
-
             retAction = Action.TURN_RIGHT;
+            stageRow =true;
         }
 
-            System.out.println("Action taken :" +retAction);
+        return retAction;
+    }
 
-            return retAction;
+    public Action handleCol(boolean stench, boolean breeze, boolean glitter, boolean bump, boolean scream){
 
+        Action retAction = null;
+
+        if(exitCave && !gold_grabbed){
+            retAction = backTrackSteps.remove(backTrackSteps.size()-1);
+        } else if((agentY<rowDimension-1) && !gold_grabbed && getUpNeighbor(agentX,agentY).isSafe()){
+            backTrackSteps.add(Action.FORWARD);
+            retAction = Action.FORWARD;
+        } else{
+            exitCave=true;
+            if(gold_grabbed)gold_grabbed=false;
+            backTrackSteps.add(Action.TURN_RIGHT);
+            retAction = Action.TURN_RIGHT;
+            stageCol =true;
+        }
+
+        return retAction;
     }
 
 	public void runIntelligence(Cell[][] map) {
