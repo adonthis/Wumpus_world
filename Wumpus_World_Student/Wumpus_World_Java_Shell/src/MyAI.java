@@ -20,6 +20,7 @@ import java.util.ArrayList;
 // ======================================================================
 
 public class MyAI extends Agent {
+
 	private static class Cell {
 		enum PIECE_STATUS {
 			maybe, there, not_there;
@@ -33,15 +34,16 @@ public class MyAI extends Agent {
 		}
 
 		public PIECE_STATUS pit, wumpus;
-		boolean safe;
 		ArrayList<Cell>[] pitConflictLists;
 		ArrayList<Cell> wumpusConflictList;
 
-		public void isSafe() {
-			if (pit == PIECE_STATUS.not_there && (wumpus == PIECE_STATUS.not_there || wumpusKilled)) {
-				safe = true;
-			}
+		public void markSafe() {
+			pit = PIECE_STATUS.not_there;
+			wumpus = PIECE_STATUS.not_there;
+		}
 
+		public boolean isSafe() {
+			return (pit == PIECE_STATUS.not_there && (wumpus == PIECE_STATUS.not_there || wumpusKilled));
 		}
 
 		public void handleStenchNotPresent() {
@@ -88,6 +90,7 @@ public class MyAI extends Agent {
 		}
 
 		public void handleBreezePresent(ArrayList<Cell> listOfConflicts) {
+
 			if (pit == PIECE_STATUS.not_there) {
 				return;
 			}
@@ -125,15 +128,28 @@ public class MyAI extends Agent {
 				}
 			}
 		}
-		
+
 	};
 
+	public static boolean usingCustomMap;
+	public static int colDimension;
+	public static int rowDimension;
+	public static int agentX;
+	public static int agentY;
+	public static int agentDir;
 	public static boolean wumpusFound, wumpusKilled;
 	public static Cell[][] myWorld;
+
 	public MyAI() {
 		wumpusFound = false;
 		wumpusKilled = false;
 		myWorld = new Cell[7][7];
+		colDimension = 7;
+		rowDimension = 7;
+		agentX = 0;
+		agentY = 0;
+		agentDir = 0; // The direction the agent is facing: 0 - right, 1 - down, 2 - left, 3 - up
+		usingCustomMap = true;
 		// Create a map of 7x7
 
 		// ======================================================================
@@ -145,6 +161,44 @@ public class MyAI extends Agent {
 		// ======================================================================
 	}
 
+	public void updateLocationInfo(Action lastAction) {
+		switch (lastAction) {
+		case TURN_LEFT:
+			if (--agentDir < 0)
+				agentDir = 3;
+			break;
+
+		case TURN_RIGHT:
+			if (++agentDir > 3)
+				agentDir = 0;
+			break;
+
+		case FORWARD:
+			if (agentDir == 0 && agentX + 1 < colDimension)
+				++agentX;
+			else if (agentDir == 1 && agentY - 1 >= 0)
+				--agentY;
+			else if (agentDir == 2 && agentX - 1 >= 0)
+				--agentX;
+			else if (agentDir == 3 && agentY + 1 < rowDimension)
+				++agentY;
+
+			break;
+
+		default:
+		}
+	}
+
+	public static void handleBump() {
+		if (agentDir == 1) {
+			rowDimension = agentY;
+			agentY--;
+		} else if (agentDir == 0) {
+			colDimension = agentX;
+			agentX--;
+		}
+	}
+
 	public Action getAction(boolean stench, boolean breeze, boolean glitter, boolean bump, boolean scream) {
 		System.out.println("Stench is" + stench);
 		System.out.println("Breeze is" + breeze);
@@ -154,72 +208,174 @@ public class MyAI extends Agent {
 		if (glitter) {
 			// traceback information
 			return Action.GRAB;
-			
-			
+
 		}
-		updateMap(stench, breeze, bump, scream, myWorld);
+		if (bump) {
+			handleBump();
+		}
+		updateMap(stench, breeze, bump, scream, myWorld, agentX, agentY, agentDir);
 		runIntelligence(myWorld);
-		//return getNextMove();
-		// Task 1. Use percepts to update your map
-		// Task 2. Once the map is updated
+		if (usingCustomMap) {
+			Action temp = getNextMove();
+			updateLocationInfo(temp);
+			if (temp == Action.TURN_LEFT) {
+				temp = Action.TURN_RIGHT;
+			} else if (temp == Action.TURN_RIGHT) {
+				temp = Action.TURN_LEFT;
+			}
+			return temp;
+		} else {
+			return getNextMove();
+		}
+	}
 
-		// ======================================================================
-		// YOUR CODE BEGINS
-		// ======================================================================
-
+	public Action getNextMove() {
 		return Action.CLIMB;
-		// ======================================================================
-		// YOUR CODE ENDS
-		// ======================================================================
 	}
 
 	public void runIntelligence(Cell[][] map) {
-		for(int i=0;i<7;i++)
-			for(int k=0;k<7;k++) {
+		for (int i = 0; i < rowDimension; i++)
+			for (int k = 0; k < colDimension; k++) {
 				map[i][k].checkAndUpdateCellPitStatus();
 				map[i][k].checkAndUpdateCellWumpusStatus();
 			}
 	}
 
-	public void updateMap(boolean stench, boolean breeze, boolean bump, boolean scream, Cell[][] map) {
+	public static Cell getRightNeighbor(int x, int y) {
+		if (y < colDimension - 1)
+			return myWorld[x][y + 1];
+		return null;
+	}
+
+	public static Cell getLeftNeighbor(int x, int y) {
+		if (y > 0)
+			return myWorld[x][y - 1];
+		return null;
+	}
+
+	public static Cell getUpNeighbor(int x, int y) {
+		if (x < rowDimension - 1)
+			return myWorld[x + 1][y];
+		return null;
+	}
+
+	public static Cell getDownNeighbor(int x, int y) {
+		if (x > 0)
+			return myWorld[x - 1][y];
+		return null;
+	}
+
+	public Cell[] getNeighbors(int x, int y, int agentDir) {
+		Cell[] neighbors = new Cell[3];
+		switch (agentDir) {
+		case 0:
+			// right Direction; hence do not need to pick up the left neighbor;
+			neighbors[0] = getRightNeighbor(x, y);
+			// down ngbor
+			neighbors[1] = getDownNeighbor(x, y);
+			// up ngbor
+			neighbors[2] = getUpNeighbor(x, y);
+
+			break;
+
+		case 1:
+			// down Direction; hence do not need to pick up the up neighbor;
+
+			// right ngbor
+			neighbors[0] = getRightNeighbor(x, y);
+			// left ngbor
+			neighbors[1] = getLeftNeighbor(x, y);
+			// down ngbor
+			neighbors[2] = getDownNeighbor(x, y);
+
+			break;
+
+		case 2:
+			// left Direction; hence do not need to pick up the right neighbor;
+
+			// left ngbor
+			neighbors[0] = getLeftNeighbor(x, y);
+			// down ngbor
+			neighbors[1] = getDownNeighbor(x, y);
+			// up ngbor
+			neighbors[2] = getUpNeighbor(x, y);
+
+			break;
+
+		case 3:
+			// up Direction; hence do not need to pick up the down neighbor;
+			// right ngbor
+			neighbors[0] = getRightNeighbor(x, y);
+			// left ngbor
+			neighbors[1] = getLeftNeighbor(x, y);
+			// up ngbor
+			neighbors[2] = getUpNeighbor(x, y);
+
+		}
+
+		return neighbors;
+	}
+
+	public void updateMap(boolean stench, boolean breeze, boolean bump, boolean scream, Cell[][] map, int agentX,
+			int agentY, int agentDir) {
 		// Minimal AI
+		Cell neighbors[] = getNeighbors(agentX, agentY, agentDir);
+
+		Cell A = neighbors[0];
+		Cell B = neighbors[1];
+		Cell C = neighbors[2];
+		ArrayList<Cell> listForA = new ArrayList<Cell>();
+		if (B != null)
+			listForA.add(B);
+		if (C != null)
+			listForA.add(C);
+
+		ArrayList<Cell> listForB = new ArrayList<Cell>();
+		if (A != null)
+			listForB.add(A);
+		if (C != null)
+			listForB.add(C);
+
+		ArrayList<Cell> listForC = new ArrayList<Cell>();
+		if (C != null)
+			listForC.add(B);
+		if (A != null)
+			listForC.add(A);
+
 		if (breeze) {
-			// get neighbors - A,B,C  (first thing that needs to be taken care of)
-			// A.handleBreezePresent(new ArrayList(B,C))
-			// B.handleBreezePresent(new ArrayList(A,C))
-			// C.handleBreezePresent(new ArrayList(B,A))
+			if (A != null)
+				A.handleBreezePresent(listForA);
+			if (B != null)
+				B.handleBreezePresent(listForB);
+			if (C != null)
+				C.handleBreezePresent(listForC);
 		} else {
-			// get neighbors - A,B,C
-			//A.handleBreezeNotPresent()
-			//B.handleBreezeNotPresent()
-			//C.handleBreezeNotPresent()
+			if (A != null)
+				A.handleBreezeNotPresent();
+			if (B != null)
+				B.handleBreezeNotPresent();
+			if (C != null)
+				C.handleBreezeNotPresent();
 		}
 		if (stench) {
-			// get neighbors - A,B,C
-						// A.handleStenchPresent(new ArrayList(B,C))
-						// B.handleStenchPresent(new ArrayList(A,C))
-						// C.handleStenchPresent(new ArrayList(B,A))
+			if (A != null)
+				A.handleStenchPresent(listForA);
+			if (B != null)
+				B.handleStenchPresent(listForB);
+			if (C != null)
+				C.handleStenchPresent(listForC);
 		} else {
-			// get neighbors - A,B,C
-						//A.handleStecnchNotPresent()
-						//B.handleStecnchNotPresent()
-						//C.handleStecnchNotPresent()
-		}
-		if (bump) 
-		{
-			//second important thing that needs to be handled
-			// note down the size of world and take a step
+			if (A != null)
+				A.handleStenchNotPresent();
+			if (B != null)
+				B.handleStenchNotPresent();
+			if (C != null)
+				C.handleStenchNotPresent();
 		}
 		if (scream) {
 			// wumpus is killed; put the flag as true
 			wumpusKilled = true;
 		}
-	}
-	// ======================================================================
-	// YOUR CODE BEGINS
-	// ======================================================================
 
-	// ======================================================================
-	// YOUR CODE ENDS
-	// ======================================================================
+	}
 }
