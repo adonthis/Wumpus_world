@@ -154,6 +154,8 @@ public class MyAI extends Agent {
 			System.out.println("");
 			System.out.println("");
 		}
+		System.out.println("agentX PERSONAL:"+agentX);
+        System.out.println("agentY PERSONAL:"+agentY);
 	}
 
 	private void printTileInfo ( int c, int r )
@@ -270,67 +272,66 @@ public class MyAI extends Agent {
 //		System.out.println("bump is" + bump);
 //		System.out.println("scream is" + scream);
 
-        if(exitCave && agentX==0 && agentY ==0){
+        if(exitCave && agentX==0 && agentY==0){
 
-            if(!gold_grabbed && !turnedRight) {
+            if(gold_grabbed) {
+                return climbOut();
+            }else{// if(!gold_grabbed && !turnedRight) {
                 exitCave =false;
+                if(turnedRight && stageRow && stageCol)return climbOut();
                 turnedRight=true;
-                System.out.println("Action taken :" +Action.TURN_RIGHT);
-                return Action.TURN_RIGHT;
-//            }else if(turnedRight){
-//                return getNextMove(stench, breeze, glitter, bump, scream); 
-            }else {
-                System.out.println("X :" + agentX + " Y :" + agentY + " Action is :" + Action.CLIMB);
-                return Action.CLIMB;
+//                stageRow =true;
+//                System.out.println("Action taken :" +Action.TURN_RIGHT);
+//                return Action.TURN_RIGHT;
             }
             //if at start point and exit true then climb
         }
 
         if (glitter && !gold_grabbed) {
             // traceback information
-            exitCave =true;
             System.out.println("glitter is" + glitter);
             gold_grabbed =true;
             return Action.GRAB;
         }
-
-		if (glitter) {
-			// traceback information
-			return Action.GRAB;
-		}
 		if (bump) {
 			handleBump();
 		}
 		updateMap(stench, breeze, bump, scream, myWorld, agentX, agentY, agentDir);
 		runIntelligence(myWorld);
-//		printBoardInfo();
+		printBoardInfo();
+		System.out.println("---------------------------------------------------------------------------------");
 		if (usingCustomMap) {
 			Action temp = getNextMove(stench, breeze, glitter, bump, scream);
 			updateLocationInfo(temp);
-			if (temp == Action.TURN_LEFT) {
-				temp = Action.TURN_RIGHT;
-			} else if (temp == Action.TURN_RIGHT) {
-				temp = Action.TURN_LEFT;
-			}
+//			if (temp == Action.TURN_LEFT) {
+//				temp = Action.TURN_RIGHT;
+//			} else if (temp == Action.TURN_RIGHT) {
+//				temp = Action.TURN_LEFT;
+//			}
 			return temp;
 		} else {
 			return getNextMove(stench, breeze, glitter, bump, scream);
 		}
 	}
 
+	public Action climbOut(){
+
+        System.out.println("X :" + agentX + " Y :" + agentY + " Action is :" + Action.CLIMB);
+        return Action.CLIMB;
+    }
     public Action getNextMove(boolean stench, boolean breeze, boolean glitter, boolean bump, boolean scream){
 
 
 	    Action retAction = null;
 
-        if(stageCol){
+        if(turnedRight){
             retAction = handleCol(stench, breeze, glitter, bump, scream);
+        }else{
+            retAction = handleRow(stench, breeze, glitter, bump, scream);
         }
 
-        retAction = handleRow(stench, breeze, glitter, bump, scream);
 
 
-//
 //        if(exitCave && !gold_grabbed){
 //            retAction = backTrackSteps.remove(backTrackSteps.size()-1);
 //        } else if((agentX<colDimension-1) && !gold_grabbed && getRightNeighbor(agentX,agentY).isSafe()){
@@ -339,6 +340,7 @@ public class MyAI extends Agent {
 //
 //            retAction = Action.FORWARD;
 //        } else{
+//            if(agentY==0 && agentX==0)retAction = Action.CLIMB;
 //            exitCave=true;
 //            if(gold_grabbed)gold_grabbed=false;
 //
@@ -357,17 +359,21 @@ public class MyAI extends Agent {
 
         Action retAction = null;
 
-        if(exitCave && !gold_grabbed){
+        if(exitCave){// && !gold_grabbed){
             retAction = backTrackSteps.remove(backTrackSteps.size()-1);
         } else if((agentX<colDimension-1) && !gold_grabbed && getRightNeighbor(agentX,agentY).isSafe()){
             backTrackSteps.add(Action.FORWARD);
             retAction = Action.FORWARD;
         } else{
+            if(agentY==0 && agentX==0){
+                retAction = Action.CLIMB;
+                return retAction;
+            }
             exitCave=true;
-            if(gold_grabbed)gold_grabbed=false;
+//            if(gold_grabbed)gold_grabbed=false;
             backTrackSteps.add(Action.TURN_RIGHT);
             retAction = Action.TURN_RIGHT;
-            stageRow =true;
+//            stageRow =true;
         }
 
         return retAction;
@@ -377,14 +383,18 @@ public class MyAI extends Agent {
 
         Action retAction = null;
 
-        if(exitCave && !gold_grabbed){
+        if(!stageRow){
+            stageRow =true;
+            retAction = Action.TURN_RIGHT;
+        }
+        if(exitCave){// && !gold_grabbed){
             retAction = backTrackSteps.remove(backTrackSteps.size()-1);
         } else if((agentY<rowDimension-1) && !gold_grabbed && getUpNeighbor(agentX,agentY).isSafe()){
             backTrackSteps.add(Action.FORWARD);
             retAction = Action.FORWARD;
         } else{
             exitCave=true;
-            if(gold_grabbed)gold_grabbed=false;
+//            if(gold_grabbed)gold_grabbed=false;
             backTrackSteps.add(Action.TURN_RIGHT);
             retAction = Action.TURN_RIGHT;
             stageCol =true;
@@ -402,26 +412,26 @@ public class MyAI extends Agent {
 	}
 
 	public static Cell getRightNeighbor(int x, int y) {
-		if (y < colDimension - 1)
-			return myWorld[x][y + 1];
+		if (x+1 < colDimension)
+			return myWorld[x+1][y];
 		return null;
 	}
 
 	public static Cell getLeftNeighbor(int x, int y) {
-		if (y > 0)
-			return myWorld[x][y - 1];
+		if (x-1 >= 0)
+			return myWorld[x-1][y];
 		return null;
 	}
 
 	public static Cell getUpNeighbor(int x, int y) {
-		if (x < rowDimension - 1)
-			return myWorld[x + 1][y];
+		if (y+1 < rowDimension )
+			return myWorld[x][y+1];
 		return null;
 	}
 
 	public static Cell getDownNeighbor(int x, int y) {
-		if (x > 0)
-			return myWorld[x - 1][y];
+		if (y-1 >= 0)
+			return myWorld[x][y-1];
 		return null;
 	}
 
