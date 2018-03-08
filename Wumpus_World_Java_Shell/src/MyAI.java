@@ -1,7 +1,6 @@
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 
 // ======================================================================
@@ -25,6 +24,11 @@ import java.util.Iterator;
 
 public class MyAI extends Agent {
 
+	/**
+	 * Data Structure used to maintain the knowledge base; and to save the
+	 * current agent information w.r.t to the game
+	 *
+	 */
 	private static class Cell {
 		enum PIECE_STATUS {
 			maybe, there, not_there;
@@ -35,13 +39,32 @@ public class MyAI extends Agent {
 			return "Cell [visit=" + visited + ", pit=" + pit + ", wumpus=" + wumpus + ", x=" + x + ", y=" + y + "]";
 		}
 
+		/* to depict if the cell has been visited atleast once or not */
 		boolean visited;
+
+		/*
+		 * to keep track of current status of our knowledge of pit/wumpus
+		 * presence for the given cell
+		 */
 		public PIECE_STATUS pit, wumpus;
+
+		/*
+		 * A HashMap of conflicts that have arisen because of the Breezes;
+		 * mainly breeze found in one cell can be responsible for Pit's in 4
+		 * Cell
+		 */
 		HashMap<Cell, ArrayList<Cell>> pitConflictMap;
+
+		/*
+		 * An ArrayList to keep track of conflict list arisen because of Stench
+		 */
 		ArrayList<Cell> wumpusConflictList;
+
+		/* The X and Y Co-ordinate of the given cell */
 		int x, y;
 
 		Cell(int x, int y) {
+			/* Giving init values */
 			pitConflictMap = new HashMap<Cell, ArrayList<Cell>>();
 			visited = false;
 
@@ -58,23 +81,43 @@ public class MyAI extends Agent {
 		}
 
 		public boolean isSafe() {
+
+			/* Cell is within the boundaries */
 			if (x >= colDimension || y >= rowDimension) {
 				return false;
 			}
+
+			/* There is no pit or wumpus in the cell */
 			return (pit == PIECE_STATUS.not_there && (wumpus == PIECE_STATUS.not_there || wumpusKilled));
 		}
 
+		/*
+		 * If Stench isn't found in neighboring cell => There is no Wumpus in
+		 * this Cell
+		 */
 		public void handleStenchNotPresent() {
 			wumpus = PIECE_STATUS.not_there;
 		}
 
+		/*
+		 * If Stench is found in the neighboring cell, maintain the conflict
+		 * list, but if 2 separate conflict lists are generated for the same
+		 * cell => Wumpus is present for sure
+		 */
 		public void handleStenchPresent(ArrayList<Cell> listOfConflicts) {
 			if (wumpus == PIECE_STATUS.not_there) {
 				return;
 			}
-			wumpusConflictList.addAll(listOfConflicts);
+
+			if (wumpusConflictList.isEmpty() || wumpusConflictList.containsAll(listOfConflicts))
+				wumpusConflictList.addAll(listOfConflicts);
+			else {
+				wumpus = PIECE_STATUS.there;
+				wumpusFound = true;
+			}
 		}
 
+		/* Run inference to figure out if Wumpus Present */
 		public void checkAndUpdateCellWumpusStatus() {
 			if (wumpus == PIECE_STATUS.there) {
 				// wumpus is present
@@ -88,6 +131,7 @@ public class MyAI extends Agent {
 				// not there; clear the list
 				wumpusConflictList.clear();
 			}
+
 			if (!wumpusConflictList.isEmpty()) {
 				for (int i = 0; i < wumpusConflictList.size(); i++) {
 					Cell xyz = wumpusConflictList.get(i);
@@ -103,10 +147,18 @@ public class MyAI extends Agent {
 			}
 		}
 
+		/*
+		 * If Breeze isn't found in neighboring cell => There is no Pit in this
+		 * Cell
+		 */
 		public void handleBreezeNotPresent() {
 			pit = PIECE_STATUS.not_there;
 		}
 
+		/*
+		 * If Breeze is found in the neighboring cell, maintain the conflict
+		 * list
+		 */
 		public void handleBreezePresent(ArrayList<Cell> listOfConflicts, Cell breezeFoundAt) {
 
 			if (pit == PIECE_STATUS.not_there || listOfConflicts.isEmpty()
@@ -117,6 +169,7 @@ public class MyAI extends Agent {
 			pitConflictMap.put(breezeFoundAt, listOfConflicts);
 		}
 
+		/* Run inference to figure out if Pit Present */
 		public void checkAndUpdateCellPitStatus() {
 			if (pit == PIECE_STATUS.there) {
 				return;
@@ -170,11 +223,6 @@ public class MyAI extends Agent {
 		if (myWorld[c][r].visited)
 			tileString.append("V");
 
-		// if (myWorld[c][r].wumpus) tileString.append("W");
-		// if (myWorld[c][r].gold) tileString.append("G");
-		// if (myWorld[c][r].breeze) tileString.append("B");
-		// if (myWorld[c][r].stench) tileString.append("S");
-
 		if (agentX == c && agentY == r)
 			tileString.append("@");
 
@@ -183,7 +231,8 @@ public class MyAI extends Agent {
 		System.out.printf("%8s", tileString.toString());
 	}
 
-	public static boolean usingCustomMap;
+	static boolean DEBUG;
+	ArrayList<Action> moveList;
 	public static int colDimension;
 	public static int rowDimension;
 	public static int agentX;
@@ -191,14 +240,16 @@ public class MyAI extends Agent {
 	public static int agentDir;
 	public static boolean wumpusFound, wumpusKilled, bumped, returnNow, gold_grabbed, startCorner, endCorner, exitCave;
 	public static Cell[][] myWorld;
-	public static ArrayList<Action> backTrackSteps;
-	//InputStreamReader isr;
-	//BufferedReader br;
+	HashSet<Cell> visited;
+	int costToHome;
+	ArrayList<Cell> pathToCell;
+	boolean byeByeCave = false;
+	boolean pathToHomeGenerated = false;
+	ArrayList<Action> actionsForPathToHome = new ArrayList<Action>();
+	int visitedNodeCount = 0;
 
 	public MyAI() {
-		//isr = new InputStreamReader(System.in);
-		//br = new BufferedReader(isr);
-
+		DEBUG = false;
 		moveList = new ArrayList<Action>();
 		wumpusFound = false;
 		wumpusKilled = false;
@@ -214,25 +265,15 @@ public class MyAI extends Agent {
 		agentY = 0;
 		agentDir = 0; // The direction the agent is facing: 0 - right, 1 - down,
 		// 2 - left, 3 - up
-		usingCustomMap = true;
 
 		exitCave = false;
 		startCorner = true;
 		endCorner = false;
 		bumped = false;
 		returnNow = false;
-		backTrackSteps = new ArrayList<Action>();
-		// Create a map of 7x7
-
-		// ======================================================================
-		// YOUR CODE BEGINS
-		// ======================================================================
-
-		// ======================================================================
-		// YOUR CODE ENDS
-		// ======================================================================
 	}
 
+	/* Function to keep track of the agent's current whereabouts */
 	public void updateLocationInfo(Action lastAction) {
 		switch (lastAction) {
 			case TURN_LEFT:
@@ -261,6 +302,7 @@ public class MyAI extends Agent {
 		}
 	}
 
+	/* Function to handle Bump, when detected */
 	public static void handleBump() {
 		if (agentDir == 3) {
 			rowDimension = agentY;
@@ -269,42 +311,217 @@ public class MyAI extends Agent {
 			colDimension = agentX;
 			agentX--;
 		}
-		System.out.println("Bump detected : row " + rowDimension + "col :" + colDimension);
+
+		if (DEBUG)
+			System.out.println("Bump detected : row " + rowDimension + "col :" + colDimension);
 	}
 
-	boolean byeByeCave = false;
-
-	public boolean doIHaveSafeUnVisitedSq() {
+	/* Function that will return A SAFE but unvisited Sq/cell */
+	public Cell doIHaveSafeUnVisitedSq() {
 		for (int r = rowDimension - 1; r >= 0; --r)
 			for (int c = 0; c < colDimension; ++c)
 				if (myWorld[c][r].isSafe() && !myWorld[c][r].visited)
-					return true;
-		return false;
+					return myWorld[c][r];
+		return null;
 	}
 
+	/*
+	 * Function will generate a Cell path from current cell to dest cell, and
+	 * save it in pathToCell
+	 */
+	public void generatePathForDestination(Cell dest) {
+		visited = new HashSet<Cell>();
+		costToHome = Integer.MAX_VALUE;
+		pathToCell = new ArrayList<Cell>();
+		dfs(myWorld[agentX][agentY], dest, agentDir, new ArrayList<Cell>(), 0);
+	}
+
+	public void dfs(Cell current, Cell destination, int currentDir, ArrayList<Cell> currentPath, int cost) {
+		if (current == destination) {
+			/* We have reached the destination */
+			currentPath.add(destination);
+
+			/* If the cost is cheaper than the previous path, save this path */
+			if (cost < costToHome || costToHome == Integer.MAX_VALUE) {
+				pathToCell = new ArrayList<Cell>(currentPath);
+				costToHome = cost;
+			}
+			return;
+		}
+
+		if (cost > costToHome) {
+			/*
+			 * If the cost has already exceeded the lowest cost we know about,
+			 * ignore this path -> It is not getting any more cheaper
+			 */
+			return;
+		}
+
+		/*
+		 * At this point we haven't reached the destination, but there is still
+		 * hope for a useful path
+		 */
+
+		/* Add the current node to the current path */
+		currentPath.add(current);
+
+		/* Get all 4 neighbors */
+		Cell left = getLeftNeighbor(current.x, current.y);
+		Cell right = getRightNeighbor(current.x, current.y);
+		Cell down = getDownNeighbor(current.x, current.y);
+		Cell up = getUpNeighbor(current.x, current.y);
+
+		int newCost = cost;
+
+		/* Try Visiting Left First */
+		if (left != null && left.isSafe() && !currentPath.contains(left)) {
+			if (currentDir == 0) {
+				// we are facing right
+				newCost += 2;
+			} else if (currentDir == 1) {
+				// we are facing down
+				newCost += 1;
+			} else if (currentDir == 2) {
+				// we are facing left
+				newCost += 0;
+			} else {
+				// we are facing up
+				newCost += 1;
+			}
+			dfs(left, destination, 2, currentPath, newCost);
+			currentPath.remove(left);
+		}
+
+		newCost = cost;
+		/* Try Visiting Down next */
+		if (down != null && down.isSafe() && !currentPath.contains(down)) {
+			if (currentDir == 0) {
+				// we are facing right
+				newCost += 1;
+			} else if (currentDir == 1) {
+				// we are facing down
+				newCost += 0;
+			} else if (currentDir == 2) {
+				// we are facing left
+				newCost += 1;
+			} else {
+				// we are facing up
+				newCost += 2;
+			}
+			dfs(down, destination, 1, currentPath, newCost);
+			currentPath.remove(down);
+		}
+
+		newCost = cost;
+		/* Try visiting up next */
+		if (up != null && up.isSafe() && !currentPath.contains(up)) {
+			if (currentDir == 0) {
+				// we are facing right
+				newCost += 1;
+			} else if (currentDir == 1) {
+				// we are facing down
+				newCost += 2;
+			} else if (currentDir == 2) {
+				// we are facing left
+				newCost += 1;
+			} else {
+				// we are facing up
+				newCost += 0;
+			}
+			dfs(up, destination, 3, currentPath, newCost);
+			currentPath.remove(up);
+		}
+
+		newCost = cost;
+		/* Try visiting right next */
+		if (right != null && right.isSafe() && !currentPath.contains(right)) {
+			if (currentDir == 0) {
+				// we are facing right
+				newCost += 0;
+			} else if (currentDir == 1) {
+				// we are facing down
+				newCost += 1;
+			} else if (currentDir == 2) {
+				// we are facing left
+				newCost += 2;
+			} else {
+				// we are facing up
+				newCost += 1;
+			}
+			dfs(right, destination, 0, currentPath, newCost);
+			currentPath.remove(right);
+		}
+	}
+
+	public Action getActionImpl(ArrayList<Action> actionList) {
+		Action temp = actionList.remove(0);
+		updateLocationInfo(temp);
+		return temp;
+	}
+
+	/* Function called by the game to get the next Action to perform */
 	public Action getAction(boolean stench, boolean breeze, boolean glitter, boolean bump, boolean scream) {
+
+		if (myWorld[agentX][agentY].visited)
+			visitedNodeCount++;
+		else {
+			/* We are visiting a node for the first time, hence counter reset */
+			visitedNodeCount = 0;
+		}
+
 		myWorld[agentX][agentY].visited = true;
 
 		if (byeByeCave) {
+			/*
+			 * This case is activated when we have made the decision to exit the
+			 * game, our only goal is to reach Cell - 0,0 ASAP and leave
+			 */
+
 			if (agentX == 0 && agentY == 0)
 				return Action.CLIMB;
 
-			Action temp = backTrackSteps.remove(backTrackSteps.size() - 1);
+			if (!pathToHomeGenerated) {
+				/*
+				 * If we don't have path to 0,0 {HOME} then we generate the path
+				 * here
+				 */
+				generatePathForDestination(myWorld[0][0]);
+				if (DEBUG)
+					System.out.println("Path to Home " + pathToCell);
+				actionsForPathToHome.clear();
+			}
 
-			if (temp == Action.TURN_LEFT)
-				temp = Action.TURN_RIGHT;
-			else if (temp == Action.TURN_RIGHT)
-				temp = Action.TURN_LEFT;
+			pathToHomeGenerated = true;
 
-			updateLocationInfo(temp);
-			return temp;
+			if (!actionsForPathToHome.isEmpty()) {
+				/*
+				 * We have an Action List to perform, we shall perform this
+				 * blindly
+				 */
+				return getActionImpl(actionsForPathToHome);
+			}
+
+			/*
+			 * At this point we know that we want to go home, we have the path
+			 * (Cell -> Cell) but we do not have the Action List, hence we shall
+			 * generate an Action List
+			 */
+			Cell current = pathToCell.remove(0);
+			Cell destination = pathToCell.get(0);
+			moveToCell(destination, getLeftNeighbor(current.x, current.y), getRightNeighbor(current.x, current.y),
+					getUpNeighbor(current.x, current.y), getDownNeighbor(current.x, current.y), actionsForPathToHome);
+
+			return getActionImpl(actionsForPathToHome);
 		}
 
 		if (glitter) {
+			/*
+			 * We have found glitter, we shall pick it up, and then exit the
+			 * cave
+			 */
 			byeByeCave = true;
-			backTrackSteps.add(Action.TURN_LEFT);
-			backTrackSteps.add(Action.TURN_LEFT);
-			System.out.println("Glitter Found, time to Retrace the Steps");
+			if (DEBUG)
+				System.out.println("Glitter Found, time to Retrace the Steps");
 			return Action.GRAB;
 		}
 
@@ -313,81 +530,109 @@ public class MyAI extends Agent {
 		}
 
 		if (!moveList.isEmpty()) {
-			Action temp = moveList.remove(0);
-			updateLocationInfo(temp);
-			backTrackSteps.add(temp);
-			return temp;
+			/*
+			 * There are a list of moves pending, time to perform them first and
+			 * then figure out what cell to go to next
+			 */
+			return getActionImpl(moveList);
 		}
 
+		if (pathToCell != null && !pathToCell.isEmpty() && pathToCell.size() != 1) {
+			/*
+			 * We DO NOT have move list, but we do have a path (Cell -> Cell),
+			 * so we generate moves to next Cell in the path
+			 */
+
+			Cell current = pathToCell.remove(0);
+			Cell destination = pathToCell.get(0);
+			moveToCell(destination, getLeftNeighbor(current.x, current.y), getRightNeighbor(current.x, current.y),
+					getUpNeighbor(current.x, current.y), getDownNeighbor(current.x, current.y), moveList);
+
+			return getActionImpl(moveList);
+		}
+
+		/* At this point, we DO NOT even know which cell to visit next */
+
+		/* So we update the map with Percepts */
 		updateMap(stench, breeze, bump, scream, myWorld, agentX, agentY, agentDir);
+
+		/*
+		 * We run the intelligence on the board, to figure out Pits/Wumpus
+		 * locations
+		 */
 		runIntelligence(myWorld);
-		printBoardInfo();
+
+		if (DEBUG)
+			printBoardInfo();
+
 		Action temp = null;
-		if (doIHaveSafeUnVisitedSq()) {
-			generateNextMoves(stench, breeze, glitter, bump, scream);
+
+		/*
+		 * Figure out if there is a cell which is safe, and we haven't visited
+		 * yet
+		 */
+		Cell destination = doIHaveSafeUnVisitedSq();
+		if (DEBUG)
+			System.out.println("Destination to visit = " + destination);
+
+		if (destination != null) {
+			/* Such Cell Exists */
+			if (visitedNodeCount >= 4) {
+				/*
+				 * If I have visited 4 consecutive visited nodes, we change the
+				 * node selection logic to DFS (where I plot a path course to a
+				 * random NON VISITED - SAFE Cell
+				 */
+				if (DEBUG)
+					System.out.println("Trigger, moving to " + destination);
+
+				/*
+				 * This function generates path {Cell -> Cell} from current cell
+				 * to the given destination
+				 */
+				generatePathForDestination(destination);
+				if (DEBUG)
+					System.out.println("Path is " + pathToCell);
+
+				Cell current = pathToCell.remove(0);
+				destination = pathToCell.get(0);
+				moveToCell(destination, getLeftNeighbor(current.x, current.y), getRightNeighbor(current.x, current.y),
+						getUpNeighbor(current.x, current.y), getDownNeighbor(current.x, current.y), moveList);
+
+				return getActionImpl(moveList);
+
+			} else {
+				/*
+				 * We can afford to use the cheap, but less effective logic at
+				 * this point
+				 */
+
+				/*
+				 * This function will generate all the moves required to move to
+				 * the destination cell.
+				 */
+				generateNextMoves(stench, breeze, glitter, bump, scream);
+			}
 			temp = moveList.remove(0);
-			backTrackSteps.add(temp);
 		} else {
-			System.out.println("I Quit! Time to Retrace the Steps");
+			/* NO Such Cell Exists, that means it is time to exit the game */
+			if (DEBUG)
+				System.out.println("I Quit! Time to Retrace the Steps");
+
 			if (agentX == 0 && agentY == 0)
 				return Action.CLIMB;
 
 			byeByeCave = true;
 			temp = Action.TURN_LEFT;
-			backTrackSteps.add(Action.TURN_RIGHT);
 		}
 		updateLocationInfo(temp);
 		return temp;
 	}
 
-	public Action getAction1(boolean stench, boolean breeze, boolean glitter, boolean bump, boolean scream) {
-		// System.out.println("Stench is" + stench);
-		// System.out.println("Breeze is" + breeze);
-		// System.out.println("glitter is" + glitter);
-		// System.out.println("bump is" + bump);
-		// System.out.println("scream is" + scream);
-
-		myWorld[agentX][agentY].visited = true;
-
-		if (!moveList.isEmpty()) {
-			Action temp = moveList.remove(0);
-			updateLocationInfo(temp);
-			return temp;
-		}
-
-		if (exitCave && agentX == 0 && agentY == 0) {
-			System.out.println("X :" + agentX + " Y :" + agentY + " Action is :" + Action.CLIMB);
-			return Action.CLIMB;
-			// if at start point and exit true then climb
-		}
-
-		if (glitter && !gold_grabbed) {
-			// traceback information
-			exitCave = true;
-			System.out.println("glitter is" + glitter);
-			gold_grabbed = true;
-			return Action.GRAB;
-		}
-
-		if (glitter) {
-			return Action.GRAB;
-		}
-
-		if (bump) {
-			handleBump();
-		}
-
-		updateMap(stench, breeze, bump, scream, myWorld, agentX, agentY, agentDir);
-		runIntelligence(myWorld);
-		printBoardInfo();
-		generateNextMoves(stench, breeze, glitter, bump, scream);
-		Action temp = moveList.remove(0);
-		updateLocationInfo(temp);
-		return temp;
-	}
-
-	ArrayList<Action> moveList;
-
+	/*
+	 * Less Effective, but cheap logic to select which neighboring cell to visit
+	 * next, and generate moves to move to that cell
+	 */
 	public void generateNextMoves(boolean stench, boolean breeze, boolean glitter, boolean bump, boolean scream) {
 		// get a list of all possible neighbor squares
 		Cell left = getLeftNeighbor(agentX, agentY);
@@ -395,17 +640,25 @@ public class MyAI extends Agent {
 		Cell up = getUpNeighbor(agentX, agentY);
 		Cell down = getDownNeighbor(agentX, agentY);
 
-		System.out.println("Current Direction according to me is " + agentDir);
-		System.out.println("LEFT SQ = " + left);
-		System.out.println("RIGHT SQ = " + right);
-		System.out.println("UP SQ = " + up);
-		System.out.println("DOWN SQ = " + down);
+		// DEBUG INFO
+		if (DEBUG) {
+			System.out.println("Current Direction according to me is " + agentDir);
+			System.out.println("LEFT SQ = " + left);
+			System.out.println("RIGHT SQ = " + right);
+			System.out.println("UP SQ = " + up);
+			System.out.println("DOWN SQ = " + down);
+		}
 
+		/*
+		 * If a cell is not safe, we simply make the variable null, to avoid
+		 * checking for the same thing again
+		 */
 		left = (left != null && left.isSafe()) ? left : null;
 		right = (right != null && right.isSafe()) ? right : null;
 		up = (up != null && up.isSafe()) ? up : null;
 		down = (down != null && down.isSafe()) ? down : null;
 
+		/* Priority 1 - Visit a NON-VISITED Cell first */
 		ArrayList<Cell> nonVisit = new ArrayList<Cell>();
 		if (left != null && !left.visited)
 			nonVisit.add(left);
@@ -417,50 +670,60 @@ public class MyAI extends Agent {
 			nonVisit.add(up);
 
 		if (nonVisit.size() >= 1) {
-			if (nonVisit.size() == 1)
-				moveToCell(nonVisit.remove(0), left, right, up, down);
-			else {
-				boolean done = false;
+			if (nonVisit.size() == 1) {
+				/* We have EXACTLY 1 NON-VISITED Cell, time to visit it */
+				moveToCell(nonVisit.remove(0), left, right, up, down, moveList);
+			} else {
+				/*
+				 * We have MULTIPLE NON-VISITED Cells, we visit the one which is
+				 * cheaper to visit
+				 */
+				boolean doWeHaveAnUnVisitedCellInTheSameDirectionAsTheCurrentDirection = false;
 				Cell temp = null;
-				for (int i = 0; i < nonVisit.size() && !done; i++) {
+				for (int i = 0; i < nonVisit.size()
+						&& !doWeHaveAnUnVisitedCellInTheSameDirectionAsTheCurrentDirection; i++) {
 					temp = nonVisit.remove(0);
 					switch (agentDir) {
 						case 0:
-							// direction is right
+							// current direction is right
 							if (temp == right) {
-								moveToCell(right, left, right, up, down);
-								done = true;
+								moveToCell(right, left, right, up, down, moveList);
+								doWeHaveAnUnVisitedCellInTheSameDirectionAsTheCurrentDirection = true;
 							}
 							break;
 						case 1:
-							// direction is down
+							// current direction is down
 							if (temp == down) {
-								moveToCell(down, left, right, up, down);
-								done = true;
+								moveToCell(down, left, right, up, down, moveList);
+								doWeHaveAnUnVisitedCellInTheSameDirectionAsTheCurrentDirection = true;
 							}
 							break;
 						case 2:
-							// direction is left
+							// current direction is left
 							if (temp == left) {
-								moveToCell(left, left, right, up, down);
-								done = true;
+								moveToCell(left, left, right, up, down, moveList);
+								doWeHaveAnUnVisitedCellInTheSameDirectionAsTheCurrentDirection = true;
 							}
 							break;
 						case 3:
-							// direction is up
+							// current direction is up
 							if (temp == up) {
-								moveToCell(up, left, right, up, down);
-								done = true;
+								moveToCell(up, left, right, up, down, moveList);
+								doWeHaveAnUnVisitedCellInTheSameDirectionAsTheCurrentDirection = true;
 							}
 							break;
 					}
 				}
 
-				if (!done)
-					moveToCell(temp, left, right, up, down);
+				if (!doWeHaveAnUnVisitedCellInTheSameDirectionAsTheCurrentDirection) {
+					/* We don't, so we just go to any random UNVISITED Cell */
+					moveToCell(temp, left, right, up, down, moveList);
+				}
 			}
 		} else {
-			// remove unsafe squares
+			/* All the neighbors have been visited at least once */
+
+			/* Place the cell in the same direction as us first */
 			ArrayList<Cell> sqs = new ArrayList<Cell>();
 			if (left != null && agentDir != 0) {
 				if (agentDir == 2)
@@ -491,30 +754,39 @@ public class MyAI extends Agent {
 			}
 
 			if (sqs.isEmpty()) {
-				// turn back around and leave
+				/*
+				 * We don't have any visitable sqaure, so we need to turn back
+				 * around and leave
+				 */
 				moveList.add(Action.TURN_LEFT);
 				moveList.add(Action.TURN_LEFT);
 				moveList.add(Action.FORWARD);
-				System.out.println("Generating Steps to Turn Around");
+				if (DEBUG)
+					System.out.println("Generating Steps to Turn Around");
 			} else {
-				moveToCell(sqs.remove(0), left, right, up, down);
+				moveToCell(sqs.remove(0), left, right, up, down, moveList);
 			}
 		}
 	}
 
-	public void moveToCell(Cell moveTo, Cell left, Cell right, Cell up, Cell down) {
-		if (moveTo == left) {
-			generateMovesForCell("left", 2);
-		} else if (moveTo == right) {
-			generateMovesForCell("right", 0);
-		} else if (moveTo == up) {
-			generateMovesForCell("up", 3);
-		} else if (moveTo == down) {
-			generateMovesForCell("down", 1);
+	/*
+	 * This function will generate moves to move to the destination cell and
+	 * save them in moveList
+	 */
+	public void moveToCell(Cell destinationCell, Cell leftOfCurrent, Cell rightOfCurrent, Cell upOfCurrent,
+						   Cell downOfCurrent, ArrayList<Action> moveList) {
+		if (destinationCell == leftOfCurrent) {
+			moveToCellImpl("left", 2, moveList);
+		} else if (destinationCell == rightOfCurrent) {
+			moveToCellImpl("right", 0, moveList);
+		} else if (destinationCell == upOfCurrent) {
+			moveToCellImpl("up", 3, moveList);
+		} else if (destinationCell == downOfCurrent) {
+			moveToCellImpl("down", 1, moveList);
 		}
 	}
 
-	public void generateMovesForCell(String cellDirection, int directionNeeded) {
+	public void moveToCellImpl(String cellDirection, int directionNeeded, ArrayList<Action> moveList) {
 		switch (agentDir) {
 			case 0:
 				// current direction is right
@@ -523,6 +795,10 @@ public class MyAI extends Agent {
 					moveList.add(Action.TURN_LEFT);
 				} else if (directionNeeded == 1) {
 					// need to move to down square
+					moveList.add(Action.TURN_RIGHT);
+				} else if (directionNeeded == 2) {
+					// need to move to left square
+					moveList.add(Action.TURN_RIGHT);
 					moveList.add(Action.TURN_RIGHT);
 				}
 				break;
@@ -534,6 +810,10 @@ public class MyAI extends Agent {
 				} else if (directionNeeded == 2) {
 					// need to move to left square
 					moveList.add(Action.TURN_RIGHT);
+				} else if (directionNeeded == 3) {
+					// need to move up sqaure
+					moveList.add(Action.TURN_RIGHT);
+					moveList.add(Action.TURN_RIGHT);
 				}
 				break;
 			case 2:
@@ -544,6 +824,10 @@ public class MyAI extends Agent {
 				} else if (directionNeeded == 1) {
 					// need to move to down square
 					moveList.add(Action.TURN_LEFT);
+				} else if (directionNeeded == 0) {
+					// need to move right square
+					moveList.add(Action.TURN_RIGHT);
+					moveList.add(Action.TURN_RIGHT);
 				}
 				break;
 			case 3:
@@ -554,46 +838,22 @@ public class MyAI extends Agent {
 				} else if (directionNeeded == 2) {
 					// need to move to left square
 					moveList.add(Action.TURN_LEFT);
+				} else if (directionNeeded == 1) {
+					// need to move down square
+					moveList.add(Action.TURN_RIGHT);
+					moveList.add(Action.TURN_RIGHT);
 				}
 				break;
 		}
-		System.out.println("Generated moves to move to " + cellDirection + "Square");
+		if (DEBUG)
+			System.out.println("Generated moves to move to " + cellDirection + "Square");
 		moveList.add(Action.FORWARD);
 	}
 
-	public Action getNextMove(boolean stench, boolean breeze, boolean glitter, boolean bump, boolean scream) {
-
-		/*System.out.println("Press Enter: ");
-		try {
-			br.readLine();
-		} catch (Exception E) {
-
-		}*/
-
-		Action retAction = null;
-
-		if (exitCave && !gold_grabbed) {
-			retAction = backTrackSteps.remove(backTrackSteps.size() - 1);
-		} else if ((agentX < colDimension - 1) && !gold_grabbed && getRightNeighbor(agentX, agentY).isSafe()) {
-
-			backTrackSteps.add(Action.FORWARD);
-
-			retAction = Action.FORWARD;
-		} else {
-			exitCave = true;
-			if (gold_grabbed)
-				gold_grabbed = false;
-
-			backTrackSteps.add(Action.TURN_RIGHT);
-
-			retAction = Action.TURN_RIGHT;
-		}
-
-		System.out.println("Action taken :" + retAction);
-		return retAction;
-
-	}
-
+	/*
+	 * Run Intelligence, to check and update Pit and Wumpus Status for every
+	 * Cell
+	 */
 	public void runIntelligence(Cell[][] map) {
 		for (int i = 0; i < rowDimension; i++)
 			for (int k = 0; k < colDimension; k++) {
@@ -626,6 +886,10 @@ public class MyAI extends Agent {
 		return null;
 	}
 
+	/*
+	 * Get the 3 neighbors of the current Cell (4 neighbors - 1 (where I just
+	 * came from))
+	 */
 	public Cell[] getNeighbors(int x, int y, int agentDir) {
 		Cell[] neighbors = new Cell[3];
 		switch (agentDir) {
@@ -677,15 +941,22 @@ public class MyAI extends Agent {
 		return neighbors;
 	}
 
+	/* Function to update the map information using the percepts */
 	public void updateMap(boolean stench, boolean breeze, boolean bump, boolean scream, Cell[][] map, int agentX,
 						  int agentY, int agentDir) {
-		// Minimal AI
+
 		Cell neighbors[] = getNeighbors(agentX, agentY, agentDir);
 
 		Cell current = map[agentX][agentY];
+
+		/*
+		 * We shall call the 3 neighbors (4 - 1(the one where came from)) as
+		 * A/B/C
+		 */
 		Cell A = neighbors[0];
 		Cell B = neighbors[1];
 		Cell C = neighbors[2];
+
 		ArrayList<Cell> listForA = new ArrayList<Cell>();
 		if (B != null)
 			listForA.add(B);
